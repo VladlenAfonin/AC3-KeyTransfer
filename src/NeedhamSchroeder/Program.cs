@@ -1,8 +1,6 @@
 ﻿using System.Security.Cryptography;
-using KeyTransfer.NeedhamSchroeder.Models;
-using KeyTransfer.Common.Extensions;
-using KeyTransfer.Common.Cryptography;
 using Serilog;
+using KeyTransfer.NeedhamSchroeder.Models;
 
 var logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -17,7 +15,12 @@ var resultA = a.CheckFirst(t.AcceptRequest(a.Id, b.Id, a.Nonce));
 Console.WriteLine($"\nA: Nonce check: {resultA}.\n");
 
 var encryptedNonceB = b.EstablishKey(a.EncryptedPart);
+
 var encryptedModifiedNonceB = a.RespondWithModifiedNonce(encryptedNonceB);
+
+// Enable to see invalid protocol execution.
+//b.Nonce = RandomNumberGenerator.GetBytes(16);
+
 var result = b.FinalCheck(encryptedModifiedNonceB);
 
 Console.WriteLine($"\nB: Final nonce check {result}.");

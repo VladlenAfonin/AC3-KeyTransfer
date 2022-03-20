@@ -7,152 +7,146 @@ namespace KeyTransfer.OtwayRees.Models;
 
 public class Participant
 {
-    public int Size { get; }
-
-    public byte[] Nonce { get; private set; }
-
-    public byte[] Id { get; private set; }
-
-    public byte[] PrivateKey { get; }
+    public byte[] SessionId { get; }
 
     public byte[] SessionKey { get; private set; }
 
+    public byte[] PrivateKey { get; }
+
+    public byte[] Id { get; }
+
+    public byte[] Nonce { get; set; }
+
     public string Name { get; }
+
+    public int Size { get; }
 
     private readonly ILogger _logger;
 
-    public byte[] EncryptedPart { get; private set; }
-
-    public Participant(
-        ILogger logger, string name, int size = 16)
+    /// <summary>Initialize a new <see cref="Participant" />.</summary>
+    /// <param name="sessionId"></param>
+    /// <param name="name"></param>
+    /// <param name="size"></param>
+    public Participant(ILogger logger, byte[] sessionId, string name, int size = 16)
     {
         _logger = logger;
 
+        SessionId = sessionId;
+        SessionKey = new byte[size];
         Name = name;
         Size = size;
-        EncryptedPart = new byte[size];
-        SessionKey = new byte[size];
 
-        // Generate values for participant.
+        Id = RandomNumberGenerator.GetBytes(size);
         PrivateKey = RandomNumberGenerator.GetBytes(size);
         Nonce = RandomNumberGenerator.GetBytes(size);
-        Id = RandomNumberGenerator.GetBytes(size);
 
-        _logger.Information($"Created participant {Name} with" +
-            $"\n\tId =        {Id.AsString()}" +
-            $"\n\tPrivate key {PrivateKey.AsString()}" +
-            $"\n\tNonce       {Nonce.AsString()}");
+        _logger.Information($"Participant {Name} created." +
+            $"\n\tId: {Id.AsString()}" +
+            $"\n\tPrivateKey {PrivateKey.AsString()}" +
+            $"\n\tNonce {Nonce.AsString()}");
     }
 
     /// <summary>
-    /// Third part of the protocol. Checks the first half of the message.
+    /// First protocol step. Generate and return initial message.
     /// </summary>
-    /// <param name="encryptedMessage">Message from authority.</param>
+    /// <param name="anotherId">Id of another participant.</param>
+    /// <returns>Initial protocol message.</returns>
+    public (byte[], byte[], byte[], byte[]) SendInitialMessage(byte[] anotherId)
+    {
+        var message = Nonce
+            .Concatenate(SessionId)
+            .Concatenate(Id)
+            .Concatenate(anotherId);
+
+        var encryptedMessage = Utilities.Encrypt(message, PrivateKey);
+
+        return (SessionId, Id, anotherId, encryptedMessage);
+    }
+
+    /// <summary>
+    /// Append this <see cref="Participant"/>'s message to the end of initial
+    /// message.
+    /// </summary>
+    /// <param name="message">Initial protocol message.</param>
+    /// <returns>Appended initial message.</returns>
+    public (byte[], byte[], byte[], byte[], byte[]) AppendToInitialMessage((
+        byte[] sessionId,
+        byte[] IdA,
+        byte[] IdB,
+        byte[] encryptedMessage) message)
+    {
+        var appndix = Nonce
+            .Concatenate(SessionId)
+            .Concatenate(message.IdA)
+            .Concatenate(Id);
+
+        var encryptedAppendix = Utilities.Encrypt(appndix, PrivateKey);
+
+        return (
+            message.sessionId,
+            message.IdA,
+            message.IdB,
+            message.encryptedMessage,
+            encryptedAppendix);
+    }
+
+    /// <summary>
+    /// Check message from authority and return other participant's part.
+    /// </summary>
+    /// <param name="message">Message form authority.</param>
+    /// <returns>Part of the message for another participant.</returns>
+    public byte[] GetAndPass((
+        byte[] encryptedMessageA,
+        byte[] encryptedMessageB) message)
+    {
+        var messageB = Utilities.Decrypt(message.encryptedMessageB, PrivateKey);
+
+        (var nonce, SessionKey) = (messageB.Subarray(0, Size), messageB.Subarray(Size, Size));
+
+        _logger.Information($"Participant {Name}.GetAndPass:" +
+            $"\n\tComparing nonce received {nonce.AsString()} to current nonce {Nonce.AsString()}");
+
+        _logger.Information($"Participant {Name}.GetAndPass:" +
+            $"\n\tSession key received {SessionKey.AsString()}");
+
+        if (!nonce.IsEqualTo(Nonce))
+        {
+            _logger.Error($"Participant {Name}.GetAndPass:" +
+                $"\n\tReceived invalid nonce.");
+
+            SessionKey = new byte[Size];
+        }
+
+        return message.encryptedMessageA;
+    }
+
+    /// <summary>
+    /// Performs a final check making sure the key is established.
+    /// </summary>
+    /// <param name="encryptedMessage">
+    /// Encrypted message with nonce and session key.
+    /// </param>
     /// <returns>True if the check is successful.</returns>
-    public bool CheckFirst(byte[] encryptedMessage)
+    public bool PerformFinalCheck(byte[] encryptedMessage)
     {
-        _logger.Information($"Participant {Name}.CheckFirst:" +
-            $"\n\tEncrypted message: {encryptedMessage.AsString()}");
-
         var message = Utilities.Decrypt(encryptedMessage, PrivateKey);
 
-        _logger.Information($"Participant {Name}.CheckFirst:" +
-            $"\n\tPlain message: {message.AsString()}");
+        (var nonce, SessionKey) = (message.Subarray(0, Size), message.Subarray(Size, Size));
 
-        // Extract the part relating to another participant.
-        EncryptedPart = message.Subarray(3 * Size, 2 * Size);
+        _logger.Information($"Participant {Name}.GetAndPass:" +
+            $"\n\tComparing nonce received {nonce.AsString()} to current nonce {Nonce.AsString()}");
 
-        _logger.Information($"Participant {Name}.CheckFirst:" +
-            $"\n\tExtracted another participant message part: {EncryptedPart.AsString()}");
+        _logger.Information($"Participant {Name}.GetAndPass:" +
+            $"\n\tSession key received {SessionKey.AsString()}");
 
-        SessionKey = message.Subarray(2 * Size, Size);
+        if (!nonce.IsEqualTo(Nonce))
+        {
+            _logger.Error($"Participant {Name}.GetAndPass:" +
+                $"\n\tReceived invalid nonce.");
 
-        _logger.Information($"Participant {Name}.CheckFirst:" +
-            $"\n\tExtracted session key: {SessionKey.AsString()}");
+            SessionKey = new byte[Size];
+        }
 
-        _logger.Information($"Participant {Name}.CheckFirst:" +
-            $"\n\tComparing first message part {message.Subarray(0, Size).AsString()}" +
-            $" to nonce {Nonce.AsString()}");
-
-        return message.Subarray(0, Size).IsEqualTo(Nonce);
-    }
-
-    /// <summary>
-    /// B checks and verifies the message, encrypts his nonce with session key
-    /// and sends it to A.
-    /// </summary>
-    /// <param name="encryptedMessage"></param>
-    /// <returns></returns>
-    public byte[] EstablishKey(byte[] encryptedMessage)
-    {
-        _logger.Information($"Participant {Name}.EstablishKey:" +
-            $"\n\tEncrypted message: {encryptedMessage.AsString()}");
-
-        var message = Utilities.Decrypt(encryptedMessage, PrivateKey);
-
-        _logger.Information($"Participant {Name}.EstablishKey:" +
-            $"\n\tPlain message: {message.AsString()}");
-
-        SessionKey = message.Subarray(0, Size);
-
-        _logger.Information($"Participant {Name}.EstablishKey:" +
-            $"\n\tExtracted session key: {SessionKey.AsString()}");
-
-        var newMessage = Utilities.Encrypt(Nonce, SessionKey);
-
-        _logger.Information($"Participant {Name}.EstablishKey:" +
-            $"\n\tEncrypted nonce: {newMessage.AsString()}");
-
-        return newMessage;
-    }
-
-    /// <summary>
-    /// A recieves B's encrypted nonce and sends it back modified.
-    /// </summary>
-    /// <param name="encryptedMessage"></param>
-    /// <returns></returns>
-    public byte[] RespondWithModifiedNonce(byte[] encryptedMessage)
-    {
-        _logger.Information($"Participant {Name}.RespondWithModifiedNonce:" +
-            $"\n\tEncrypted message: {encryptedMessage.AsString()}");
-
-        var message = Utilities.Decrypt(encryptedMessage, SessionKey);
-
-        _logger.Information($"Participant {Name}.RespondWithModifiedNonce:" +
-            $"\n\tPlain message: {message.AsString()}");
-
-        message[Size - 1] -= 1;
-
-        _logger.Information($"Participant {Name}.RespondWithModifiedNonce:" +
-            $"\n\tModified message: {message.AsString()}");
-
-        var newMessage = Utilities.Encrypt(message, SessionKey);
-
-        _logger.Information($"Participant {Name}.RespondWithModifiedNonce:" +
-            $"\n\tEncrypted modified message: {newMessage.AsString()}");
-
-        return newMessage;
-    }
-
-    /// <summary>B performs a final nonce check.</summary>
-    /// <param name="encryptedMessage"></param>
-    /// <returns></returns>
-    public bool FinalCheck(byte[] encryptedMessage)
-    {
-        _logger.Information($"Participant {Name}.FinalCheck:" +
-            $"\n\tEncrypted message: {encryptedMessage.AsString()}");
-
-        var message = Utilities.Decrypt(encryptedMessage, SessionKey);
-
-        _logger.Information($"Participant {Name}.FinalCheck:" +
-            $"\n\tPlain message: {message.AsString()}");
-
-        message[Size - 1] += 1;
-
-        _logger.Information($"Participant {Name}.FinalCheck:" +
-            $"\n\tComparing recieved incremented message {message.AsString()}" +
-            $" to nonce {Nonce.AsString()}");
-
-        return message.IsEqualTo(Nonce);
+        return nonce.IsEqualTo(Nonce);
     }
 }

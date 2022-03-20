@@ -7,44 +7,57 @@ namespace KeyTransfer.OtwayRees.Models;
 
 public class Authority
 {
-    public byte[] SessionKey { get; private set; }
+    public byte[] SessionId { get; }
+
+    public int Size { get; }
 
     private readonly byte[] _keyAt;
     private readonly byte[] _keyBt;
 
     private readonly ILogger _logger;
 
-    public Authority(byte[] keyAt, byte[] keyBt, ILogger logger)
+    public Authority(ILogger logger, byte[] sessionId, byte[] keyA, byte[] keyB, int size = 16)
     {
-        SessionKey = new byte[keyAt.Length];
-
-        _keyAt = keyAt;
-        _keyBt = keyBt;
         _logger = logger;
+
+        _logger.Information($"Authority created.");
+
+        Size = size;
+        SessionId = sessionId;
+
+        _keyAt = keyA;
+        _keyBt = keyB;
     }
 
-    public byte[] AcceptRequest(byte[] IdA, byte[] IdB, byte[] NonceA)
+    public (byte[], byte[]) GenerateInitialResponse((
+        byte[] sessionId,
+        byte[] IdA,
+        byte[] IdB,
+        byte[] encryptedMessageA,
+        byte[] encryptedMessageB) message)
     {
-        SessionKey = RandomNumberGenerator.GetBytes(_keyAt.Length);
+        // Generate a session key to be shared.
+        var sessionKey = RandomNumberGenerator.GetBytes(Size);
 
-        _logger.Information($"Authority.AcceptRequest:" +
-            $"\n\tSession key: {SessionKey.AsString()}");
+        _logger.Information($"Authority.GenerateInitialResponse:" +
+            $"\n\tSession key generated: {sessionKey.AsString()}");
 
-        byte[] plainMessage = NonceA
-            .Concatenate(IdB)
-            .Concatenate(SessionKey)
-            .Concatenate(Utilities.Encrypt(
-                SessionKey.Concatenate(IdA), _keyBt));
+        var messageA = Utilities.Decrypt(
+            message.encryptedMessageA, _keyAt);
+        var messageB = Utilities.Decrypt(
+            message.encryptedMessageB, _keyBt);
 
-        _logger.Information($"Authority.AcceptRequest:" +
-            $"\n\tPlain message: {plainMessage.AsString()}");
+        var nonceA = messageA.Subarray(0, Size);
+        var nonceB = messageB.Subarray(0, Size);
 
-        byte[] result = Utilities.Encrypt(plainMessage, _keyAt);
+        _logger.Information($"Authority.GenerateInitialResponse:" +
+            $"\n\tNonces found. A: {nonceA.AsString()}, B: {nonceB.AsString()}");
 
-        _logger.Information($"Authority.AcceptRequest:" +
-            $"\n\tEncrypted message: {result.AsString()}");
+        var newMessageA = Utilities.Encrypt(
+            nonceA.Concatenate(sessionKey), _keyAt);
+        var newMessageB = Utilities.Encrypt(
+            nonceB.Concatenate(sessionKey), _keyBt);
 
-        return result;
+        return (newMessageA, newMessageB);
     }
 }
-

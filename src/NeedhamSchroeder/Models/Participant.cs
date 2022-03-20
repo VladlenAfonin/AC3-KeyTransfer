@@ -9,7 +9,7 @@ public class Participant
 {
     public int Size { get; }
 
-    public byte[] Nonce { get; private set; }
+    public byte[] Nonce { get; set; }
 
     public byte[] Id { get; private set; }
 
