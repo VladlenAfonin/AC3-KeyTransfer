@@ -41,9 +41,9 @@ public class Participant
         Nonce = RandomNumberGenerator.GetBytes(size);
 
         _logger.Information($"Participant {Name} created." +
-            $"\n\tId: {Id.AsString()}" +
-            $"\n\tPrivateKey {PrivateKey.AsString()}" +
-            $"\n\tNonce {Nonce.AsString()}");
+            $"\n\tId:         {Id.AsString()}" +
+            $"\n\tPrivateKey: {PrivateKey.AsString()}" +
+            $"\n\tNonce:      {Nonce.AsString()}");
     }
 
     /// <summary>
@@ -133,15 +133,15 @@ public class Participant
 
         (var nonce, SessionKey) = (message.Subarray(0, Size), message.Subarray(Size, Size));
 
-        _logger.Information($"Participant {Name}.GetAndPass:" +
+        _logger.Information($"Participant {Name}.PerformFinalCheck:" +
             $"\n\tComparing nonce received {nonce.AsString()} to current nonce {Nonce.AsString()}");
 
-        _logger.Information($"Participant {Name}.GetAndPass:" +
+        _logger.Information($"Participant {Name}.PerformFinalCheck:" +
             $"\n\tSession key received {SessionKey.AsString()}");
 
         if (!nonce.IsEqualTo(Nonce))
         {
-            _logger.Error($"Participant {Name}.GetAndPass:" +
+            _logger.Error($"Participant {Name}.PerformFinalCheck:" +
                 $"\n\tReceived invalid nonce.");
 
             SessionKey = new byte[Size];
