@@ -47,6 +47,36 @@ public class Authority
         var messageB = Utilities.Decrypt(
             message.encryptedMessageB, _keyBt);
 
+        if (
+            !messageA.Subarray(Size, Size).IsEqualTo(message.sessionId) ||
+            !messageB.Subarray(Size, Size).IsEqualTo(message.sessionId))
+        {
+            _logger.Error($"Authority.GenerateInitialResponse:" +
+                $"\n\tInvalid session id.");
+
+            throw new InvalidOperationException($"Invalid session id.");
+        }
+
+        if (
+            !messageA.Subarray(2 * Size, Size).IsEqualTo(message.IdA) ||
+            !messageB.Subarray(2 * Size, Size).IsEqualTo(message.IdA))
+        {
+            _logger.Error($"Authority.GenerateInitialResponse:" +
+                $"\n\tInvalid participant A id.");
+
+            throw new InvalidOperationException($"Invalid participant A id.");
+        }
+
+        if (
+            !messageA.Subarray(3 * Size, Size).IsEqualTo(message.IdB) ||
+            !messageB.Subarray(3 * Size, Size).IsEqualTo(message.IdB))
+        {
+            _logger.Error($"Authority.GenerateInitialResponse:" +
+                $"\n\tInvalid participant B id.");
+
+            throw new InvalidOperationException($"Invalid participant B id.");
+        }
+
         var nonceA = messageA.Subarray(0, Size);
         var nonceB = messageB.Subarray(0, Size);
 

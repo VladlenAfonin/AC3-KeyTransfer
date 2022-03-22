@@ -75,6 +75,14 @@ public class Participant
         byte[] IdB,
         byte[] encryptedMessage) message)
     {
+        if (!message.IdB.IsEqualTo(Id))
+        {
+            _logger.Error($"Participant {Name}.AppendToInitialMessage:" +
+                $"\n\tReceived invalid id.");
+
+            throw new InvalidOperationException($"Received invalid id.");
+        }
+
         var appndix = Nonce
             .Concatenate(SessionId)
             .Concatenate(message.IdA)
